@@ -1,10 +1,8 @@
-#ifndef MOTOR_CONTROL
-#define MOTOR_CONTROL
+#ifndef MCF8315D
+#define MCF8315D
 
 // Includes
 
-#include "stm32f3xx_hal.h"
-#include "stm32f3xx_hal_i2c.h"
 #include <stdint.h>
 
 /* Macros */

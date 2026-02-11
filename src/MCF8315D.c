@@ -1,8 +1,12 @@
 // Includes
-
-#include "motor_control.h"
+#include "stm32l0xx_hal.h"
+#include "stm32l0xx_hal_i2c.h"
+#include "../inc/MCF8315D.h"
 #include <math.h>
-#include "motor_reg_defs.h"
+#include "../inc/MCF8315D_reg_defs.h"
+
+//Replace with specific STM32 in use
+
 
 /* Private Variables */
 static eeprom_register_s eeprom_default_config[] = {
