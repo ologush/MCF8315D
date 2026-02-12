@@ -341,7 +341,7 @@ MOTOR_ERRORS_e clear_fault(void) {
 
 uint8_t find_target_id() {
 
-    for (uint8_t i = 1; i < 2; i++) {
+    for (uint8_t i = 0; i < 127; i++) {
         
         uint8_t ret = HAL_I2C_IsDeviceReady(hi2c_motor_ctrl, (uint16_t)(i << 1), 3, 5);
 
