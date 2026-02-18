@@ -36,6 +36,15 @@ typedef enum {
     MOTOR_CTRL_ERR_ERROR
 } MOTOR_ERRORS_e;
 
+typedef enum {
+    MCF_IDLE,
+    MCF_TX_R,
+    MCF_TX_W,
+    MCF_RX,
+    MCF_DONE,
+    MCF_ERROR
+} MCF8315_STATE_e;
+
 typedef struct {
     //Actual measured values
     float motor_resistance;

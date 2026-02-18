@@ -27,6 +27,7 @@ static eeprom_register_s eeprom_default_config[] = {
 };
 
 static I2C_HandleTypeDef *hi2c_motor_ctrl;
+static MCF8315_STATE_e state;
 
 // Private function prototypes
 static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word);
@@ -66,22 +67,19 @@ static MOTOR_ERRORS_e MCF8315_write_register(uint16_t reg_address, uint64_t reg_
     tx_union.data_word.mem_sec = 0;
     tx_union.data_word.mem_addr = reg_address << 4; // Fix works for now with how the bitfields are set. May have to fix in the future
 
-    switch (length) {
-        case D_LEN_16_BIT:
-            tx_union.data_word.data_u.data_16 = (uint16_t)reg_value;
-            break;
-        case D_LEN_32_BIT:
-            tx_union.data_word.data_u.data_32 = (uint32_t)reg_value;
-            break;
-        case D_LEN_64_BIT:
-            tx_union.data_word.data_u.data_64 = reg_value;
-            break;
-        default:
-            return MOTOR_CTRL_ERR_ERROR;
+    uint8_t tx_buffer[tx_buffer_len];
+    tx_buffer[0] = MCF8315D_I2C_ADDRESS << 1;
+    tx_buffer[1] = length << 4;
+    tx_buffer[2] = (reg_address & 0xF00) >> 8;
+    tx_buffer[3] = reg_address & 0x0FF;
+    
+    uint8_t *reg_bytes = (uint8_t*)&reg_value;
+    for(uint8_t i = 0; i < (tx_buffer_len - 4); i++) {
+        tx_buffer[i + 4] = reg_bytes[i];
     }
 
     HAL_StatusTypeDef ret;
-    ret = HAL_I2C_Master_Transmit(hi2c_motor_ctrl, tx_union.buffer[0], tx_union.buffer + 1, tx_buffer_len - 1, HAL_MAX_DELAY);
+    ret = HAL_I2C_Master_Transmit(hi2c_motor_ctrl, tx_buffer[0], tx_buffer + 1, tx_buffer_len - 1, HAL_MAX_DELAY);
     if(ret != HAL_OK) {
         return MOTOR_CTRL_ERR_ERROR;
     }
@@ -106,31 +104,30 @@ static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_
             return MOTOR_CTRL_ERR_ERROR;
     }
 
+    uint8_t tx_buffer[4];
+
+    tx_buffer[0] = MCF8315D_I2C_ADDRESS << 1;
+    tx_buffer[1] = (1 << 7) | (length << 4);
+    tx_buffer[2] = (reg_address & 0xF00) >> 8;
+    tx_buffer[3] = (reg_address & 0xFF);
+    
     union {
         uint8_t buffer[8];
-        motor_data_word_s data_word;
-    } tx_union = {.buffer = 0};
-
-    tx_union.data_word.target_id = MCF8315D_I2C_ADDRESS;
-    tx_union.data_word.read_write_bit = OP_RW_WRITE;
-    tx_union.data_word.op_rw = OP_RW_READ;
-    tx_union.data_word.crc_en = CRC_EN_DISABLE;
-    tx_union.data_word.d_len = length;
-    tx_union.data_word.mem_sec = 0;
-    tx_union.data_word.test = 0;
-    tx_union.data_word.mem_addr = reg_address << 4; // Fix works for now with how the bitfields are set. May have to fix in the future
-
-    union {
-        uint8_t buffer[real_length];
         uint64_t data_value;
     } rx_union;
-    HAL_StatusTypeDef e;
-    e = HAL_I2C_Master_Transmit(hi2c_motor_ctrl, tx_union.buffer[0], tx_union.buffer + 1, 3, HAL_MAX_DELAY);
-    if (e == HAL_ERROR) {
-        return MOTOR_CTRL_ERR_ERROR;
-    }
-    HAL_I2C_Master_Receive(hi2c_motor_ctrl, tx_union.buffer[0], rx_union.buffer, real_length, HAL_MAX_DELAY);
 
+    rx_union.data_value = 0;
+
+    HAL_StatusTypeDef e;
+
+    state = MCF_TX_R;
+    e = HAL_I2C_Master_Seq_Transmit_IT(hi2c_motor_ctrl, tx_buffer[0], tx_buffer + 1, 3, I2C_FIRST_FRAME);
+    while (state == MCF_TX_R);
+    state = MCF_RX;
+    e = HAL_I2C_Master_Seq_Receive_IT(hi2c_motor_ctrl, tx_buffer[0], rx_union.buffer, real_length, I2C_LAST_FRAME);
+    while (state != MCF_DONE);
+    state = MCF_IDLE;
+    
     *reg_value = rx_union.data_value;
 
     return MOTOR_CTRL_ERR_OK;
@@ -147,7 +144,9 @@ static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word) {
 static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data) {
 
     // Set speed ref to 0, skeptical that this is the right value but it is what is written in the datasheet
+    uint64_t reg_data;
     MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x08000000, D_LEN_32_BIT);
+    MCF8315_read_register(MCF8315_ALGO_DEBUG1_REG, &reg_data, D_LEN_32_BIT);
 
     clear_fault();
 
@@ -197,7 +196,10 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
         return MOTOR_CTRL_ERR_ERROR;
     }
 
-    handle_fault();
+    uint64_t read_reg;
+    uint32_t eeprom_data[14] = {0};
+
+    read_eeprom_config(eeprom_data);
 
     uint32_t config_data[14];
     read_eeprom_config(config_data);
@@ -332,9 +334,8 @@ MOTOR_ERRORS_e clear_fault(void) {
     } fault_data_union;
 
     MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &fault_data_union.data_64, D_LEN_32_BIT);
-    fault_data_union.data_32 = fault_data_union.data_32 & 0xDFFFFFFF;
-
-    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, fault_data_union.data_32, D_LEN_32_BIT);
+    
+    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x30000000, D_LEN_32_BIT);
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -351,5 +352,36 @@ uint8_t find_target_id() {
     }
 
     return 0xFF;
+
+}
+
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
+
+    if (hi2c != hi2c_motor_ctrl) return;
+
+    switch (state) {
+        case MCF_TX_R:
+            state = MCF_RX;
+            break;
+        case MCF_TX_W:
+            state = MCF_DONE;
+            break;
+        defualt:
+            break;
+    }
+
+}
+
+void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+
+    if (hi2c != hi2c_motor_ctrl) return;
+
+    switch (state) {
+        case MCF_RX:
+            state = MCF_DONE;
+            break;
+        default:
+            break;
+    }
 
 }

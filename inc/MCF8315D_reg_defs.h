@@ -53,7 +53,7 @@
 #define MCF8315_ALGO_DEBUG2_REG               0x0EE
 #define MCF8315_CURRENT_PI_REG               0x0F0
 #define MCF8315_SPEED_PI_REG                 0x0F2
-#define MCF8315_DAC_1_REG                    0x0F4
+#define MCF8315_DAC_1_REG                    0xF4
 #define MCF8315_DAC_2_REG                    0x0F6
 #define MCF8315_EEPROM_SECURITY_REG          0x0F8
 
