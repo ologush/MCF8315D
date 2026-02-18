@@ -178,7 +178,7 @@ static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data) {
 
         uint8_t index = (i - MCF8315_EEPROM_ISD_CONFIG_REG) / 2;
 
-        config_data[(i - MCF8315_EEPROM_ISD_CONFIG_REG) / 2] = eeprom_value_union.data_32;
+        config_data[index] = eeprom_value_union.data_32;
     }
 
     return MOTOR_CTRL_ERR_OK;
@@ -196,13 +196,9 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
         return MOTOR_CTRL_ERR_ERROR;
     }
 
-    uint64_t read_reg;
-    uint32_t eeprom_data[14] = {0};
-
+    uint32_t eeprom_data[24] = {0};
     read_eeprom_config(eeprom_data);
 
-    uint32_t config_data[14];
-    read_eeprom_config(config_data);
     return MOTOR_CTRL_ERR_OK;
 }
 
@@ -334,7 +330,6 @@ MOTOR_ERRORS_e clear_fault(void) {
     } fault_data_union;
 
     MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &fault_data_union.data_64, D_LEN_32_BIT);
-    
     MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x30000000, D_LEN_32_BIT);
 
     return MOTOR_CTRL_ERR_OK;
