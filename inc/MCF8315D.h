@@ -45,6 +45,13 @@ typedef enum {
     MCF_ERROR
 } MCF8315_STATE_e;
 
+typedef enum {
+    MCF_SPEED_MODE_ANALOG = 0,
+    MCF_SPEED_MODE_PWM = 1,
+    MCF_SPEED_MODE_I2C = 2,
+    MCF_SPEED_MODE_FREQ = 3
+} MCF8315_SPEED_MODE_e;
+
 typedef struct {
     //Actual measured values
     float motor_resistance;
@@ -100,6 +107,7 @@ MOTOR_ERRORS_e get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault
 MOTOR_ERRORS_e clear_fault(void);
 MOTOR_ERRORS_e extract_motor_params(motor_parameters_s *extracted_params);
 MOTOR_ERRORS_e run_mpet(void);
+MOTOR_ERRORS_e set_speed_mode(MCF8315_SPEED_MODE_e speed_mode);
 
 MOTOR_ERRORS_e find_target_id(void);
 

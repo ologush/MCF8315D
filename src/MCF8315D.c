@@ -5,8 +5,25 @@
 #include <math.h>
 #include "../inc/MCF8315D_reg_defs.h"
 
-//Replace with specific STM32 in use
+// MOTOR_STARTUP_2 registers
+#define IPD_CURR_THR 0x3 //.625 A
+#define IPD_REPEAT 0x1 // Two times
+#define MTR_STARTUP 0x1 // Double Align
+#define ALIGN_TIME 0x2 // 100 ms
 
+#define MPET_ROUTINE
+#define MPET_TIMEOUT_ms 100000
+
+// MOTOR_STARTUP_2 registers
+#define OL_ILIMIT 0x3 //.625 A
+#define OL_ACC_A1 0x9 //100 Hz/s
+#define OL_ACC_A2 0x8 // 75 Hz/s2
+#define OPN_CL_HANDOFF_THR 0x9 // 10 %
+#define AUTO_HANDOFF 0x1
+
+#define POLE_PAIRS 8
+#define MAX_SPEED_HZ 0xFFF
+#define MAX_SPEED_RPM 0xFFF // TODO: Change
 
 /* Private Variables */
 static eeprom_register_s eeprom_default_config[] = {
@@ -17,7 +34,7 @@ static eeprom_register_s eeprom_default_config[] = {
     {MCF8315_EEPROM_CLOSED_LOOP1_REG,      0x00000000},
     {MCF8315_EEPROM_CLOSED_LOOP2_REG,      0x00000000},
     {MCF8315_EEPROM_CLOSED_LOOP3_REG,      0x00000000},
-    {MCF8315_EEPROM_MOTOR_PARAMS_REG,      0x00000000},
+    {MCF8315_EEPROM_CLOSED_LOOP4_REG,      0x00000000},
     {MCF8315_EEPROM_REF_PROFILES1_REG,     0x00000000},
     {MCF8315_EEPROM_REF_PROFILES2_REG,     0x00000000},
     {MCF8315_EEPROM_REF_PROFILES3_REG,     0x00000000},
@@ -199,6 +216,12 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
     uint32_t eeprom_data[24] = {0};
     read_eeprom_config(eeprom_data);
 
+#ifdef MPET_ROUTINE
+    run_mpet();
+#else
+// Load parameters from EEPROM
+#endif
+
     return MOTOR_CTRL_ERR_OK;
 }
 
@@ -212,16 +235,13 @@ MOTOR_ERRORS_e motor_startup_sequence(void) {
 
 MOTOR_ERRORS_e motor_set_speed(float speed_rpm) {
 
-    if(speed_rpm > MAX_SPEED) {
+    if(speed_rpm > MAX_SPEED_RPM) {
         return MOTOR_CTRL_ERR_ERROR;
     }
 
     uint32_t speed_mask = 0x8000FFFF; // Mask to clear speed bits
-
-    //Convert speed from RPM to register value
-    uint16_t speed = (uint16_t)roundf((speed_rpm / MAX_SPEED) * 65535.0f);
-
     uint32_t current_register_value;
+    uint16_t speed = (uint16_t)roundf((speed_rpm / MAX_SPEED_RPM) * 32768.0f);
     
     union {
         uint64_t data_64;
@@ -235,7 +255,7 @@ MOTOR_ERRORS_e motor_set_speed(float speed_rpm) {
 
     uint32_t set_speed = ((uint32_t)speed << 16);
 
-    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, set_speed, D_LEN_32_BIT);
+    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, current_speed_union.data_64, D_LEN_32_BIT);
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -262,6 +282,8 @@ MOTOR_ERRORS_e extract_motor_params(motor_parameters_s *extracted_params) {
         uint8_t data_buffer[4];
     } reg_value_union;
 
+
+    
     MCF8315_read_register(MCF8315_MTR_PARAMS_REG, &reg_value_union.data_64, D_LEN_32_BIT);
 
     extracted_params->motor_inductance_hex = reg_value_union.data_buffer[1];
@@ -289,7 +311,39 @@ MOTOR_ERRORS_e extract_motor_params(motor_parameters_s *extracted_params) {
 
 MOTOR_ERRORS_e run_mpet(void) {
 
-    MCF8315_write_register(MCF8315_ALGO_DEBUG2_REG, 0x0000001F, D_LEN_32_BIT); // Start motor parameter extraction
+    uint64_t reg_value;
+
+    // Set Max Speed (should be done in a different setup)
+    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFC000) | 0xFFF; // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
+    MCF8315_write_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, reg_value, D_LEN_32_BIT);
+
+    // Enable MPET and writing the results to the shadow ram
+    MCF8315_read_register(MCF8315_EEPROM_ISD_CONFIG_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFFE3F);
+    MCF8315_write_register(MCF8315_EEPROM_ISD_CONFIG_REG, reg_value, D_LEN_32_BIT);
+    
+    motor_set_speed(0);
+    set_speed_mode(MCF_SPEED_MODE_I2C);
+
+    // Setting various parameters, will need to move this to its own function
+
+    // reg_value = (OL_ILIMIT << 27) | (OL_ACC_A1 << 23) | (OL_ACC_A2 << 19) | (AUTO_HANDOFF << 18) | (OPN_CL_HANDOFF_THR << 13);
+    // MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_2_REG, (uint64_t) reg_value, D_LEN_32_BIT);
+
+    // reg_value = (MTR_STARTUP << 29) | (ALIGN_TIME << 21) | (IPD_CURR_THR << 9) | (IPD_REPEAT << 4);
+    // MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_1_REG, (uint64_t) reg_value, D_LEN_32_BIT);
+
+    handle_fault();
+    MCF8315_write_register(MCF8315_ALGO_DEBUG2_REG, 0x0000003F, D_LEN_32_BIT); // Start motor parameter extraction
+
+    uint32_t timeout_timer = HAL_GetTick();
+    do {
+        MCF8315_read_register(MCF8315_ALGO_STATUS_MPET_REG, &reg_value, D_LEN_32_BIT);
+        if(HAL_GetTick() - timeout_timer > MPET_TIMEOUT_ms) {
+            return MOTOR_CTRL_ERR_ERROR;
+        }
+    } while((reg_value & 0xF0000000) != 0xF0000000);
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -378,5 +432,15 @@ void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
         default:
             break;
     }
+
+}
+
+MOTOR_ERRORS_e set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
+    
+    uint64_t reg_value;
+
+    MCF8315_read_register(MCF8315_EEPROM_PIN_CONFIG_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFFFFC) | speed_mode;
+    MCF8315_write_register(MCF8315_EEPROM_PIN_CONFIG_REG, reg_value, D_LEN_32_BIT);
 
 }
