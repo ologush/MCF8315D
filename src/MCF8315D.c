@@ -12,18 +12,18 @@
 #define ALIGN_TIME 0x2 // 100 ms
 
 #define MPET_ROUTINE
-#define MPET_TIMEOUT_ms 100000
+#define MPET_TIMEOUT_ms 1000000
 
 // MOTOR_STARTUP_2 registers
-#define OL_ILIMIT 0x3 //.625 A
+#define OL_ILIMIT 0x4 //.937 A
 #define OL_ACC_A1 0x9 //100 Hz/s
 #define OL_ACC_A2 0x8 // 75 Hz/s2
 #define OPN_CL_HANDOFF_THR 0x9 // 10 %
 #define AUTO_HANDOFF 0x1
 
-#define POLE_PAIRS 8
-#define MAX_SPEED_HZ 0xFFF
-#define MAX_SPEED_RPM 0xFFF // TODO: Change
+#define POLE_PAIRS 4
+#define MAX_SPEED_HZ 0x1000
+#define MAX_SPEED_RPM 250 // TODO: Change
 
 /* Private Variables */
 static eeprom_register_s eeprom_default_config[] = {
@@ -218,17 +218,52 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
 
 #ifdef MPET_ROUTINE
     run_mpet();
+    uint64_t fault_status;
+    uint64_t reg_value;
+
+    uint64_t mtr_params;
+    uint64_t cl3;
+    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFFFC7) | (0x6 << 3);
+    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, reg_value, D_LEN_32_BIT);
+
+    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG2_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFE3FFFFF) | (0x7 << 22);
+    reg_value &= (1 << 29);
+    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG2_REG, reg_value, D_LEN_32_BIT);
+
+    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0x07FFFFFF) | (0x5 << 27); // Set CL ILIMIT to 1.25 A
+    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, reg_value, D_LEN_32_BIT);
+
+    MCF8315_read_register(MCF8315_EEPROM_PERI_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xF3FFFFFF) | (0x1 << 26);
+    MCF8315_write_register(MCF8315_EEPROM_PERI_CONFIG1_REG, reg_value, D_LEN_32_BIT);
+
+    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP3_REG, &cl3, D_LEN_32_BIT);
+    MCF8315_read_register(MCF8315_MTR_PARAMS_REG, &mtr_params, D_LEN_32_BIT);
+
+    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFC000) | (MAX_SPEED_HZ * 6); // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
+    MCF8315_write_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, reg_value, D_LEN_32_BIT);
+
+    reg_value = (OL_ILIMIT << 27) | (OL_ACC_A1 << 23) | (OL_ACC_A2 << 19) | (AUTO_HANDOFF << 18) | (OPN_CL_HANDOFF_THR << 13);
+    MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_2_REG, (uint64_t) reg_value, D_LEN_32_BIT);
+
+    reg_value = (MTR_STARTUP << 29) | (ALIGN_TIME << 21) | (IPD_CURR_THR << 9) | (IPD_REPEAT << 4);
+    MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_1_REG, (uint64_t) reg_value, D_LEN_32_BIT);
+
+    motor_set_speed(10);
+    do {
+        MCF8315_read_register(MCF8315_CONTROLLER_FAULT_STATUS_REG, &fault_status, D_LEN_32_BIT);
+    } while (fault_status == 0);
+
 #else
 // Load parameters from EEPROM
 #endif
 
-    return MOTOR_CTRL_ERR_OK;
-}
-
-MOTOR_ERRORS_e motor_startup_sequence(void) {
-    //First set speed ref > 0
-    uint32_t motor_speed = 100.0f;
-    motor_set_speed(motor_speed);
+    
+    read_eeprom_config(eeprom_data);
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -315,7 +350,7 @@ MOTOR_ERRORS_e run_mpet(void) {
 
     // Set Max Speed (should be done in a different setup)
     MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFFFFC000) | 0xFFF; // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
+    reg_value = (reg_value & 0xFFFFC000) | 0xFFF; //(MAX_SPEED_HZ * 6); // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
     MCF8315_write_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, reg_value, D_LEN_32_BIT);
 
     // Enable MPET and writing the results to the shadow ram
@@ -328,11 +363,7 @@ MOTOR_ERRORS_e run_mpet(void) {
 
     // Setting various parameters, will need to move this to its own function
 
-    // reg_value = (OL_ILIMIT << 27) | (OL_ACC_A1 << 23) | (OL_ACC_A2 << 19) | (AUTO_HANDOFF << 18) | (OPN_CL_HANDOFF_THR << 13);
-    // MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_2_REG, (uint64_t) reg_value, D_LEN_32_BIT);
 
-    // reg_value = (MTR_STARTUP << 29) | (ALIGN_TIME << 21) | (IPD_CURR_THR << 9) | (IPD_REPEAT << 4);
-    // MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_1_REG, (uint64_t) reg_value, D_LEN_32_BIT);
 
     handle_fault();
     MCF8315_write_register(MCF8315_ALGO_DEBUG2_REG, 0x0000003F, D_LEN_32_BIT); // Start motor parameter extraction
