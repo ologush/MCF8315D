@@ -224,16 +224,17 @@ MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e motor_get_speed(float *speed_rpm) {
+MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm) {
 
     union {
         uint64_t data_64;
-        uint32_t data_32;
+        int32_t data_32;
     } speed_union;
 
     MCF8315_read_register(MCF8315_SPEED_FDBK_REG, &speed_union.data_64, D_LEN_32_BIT);
 
-    *speed_rpm = (float)(((float)speed_union.data_32/pow(2, 27)) * MAX_SPEED * 60);
+    *speed_rpm = (float)(((float) speed_union.data_32 / pow(2, 27)) * MAX_SPEED_HZ);
+    *speed_rpm = *speed_rpm * 60 / POLE_PAIRS;
 
     return MOTOR_CTRL_ERR_OK;
 }
