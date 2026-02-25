@@ -108,6 +108,6 @@ MOTOR_ERRORS_e MCF8315_mpet(void);
 MOTOR_ERRORS_e MCF8315_set_speed_mode(MCF8315_SPEED_MODE_e speed_mode);
 MOTOR_ERRORS_e MCF8315_set_max_speed(uint32_t max_speed_rpm);
 
-MOTOR_ERRORS_e find_target_id(void);
+MOTOR_ERRORS_e MCF8315_find_target_id(void);
 
 #endif

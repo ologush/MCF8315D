@@ -185,7 +185,7 @@ MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
     hi2c_motor_ctrl = hi2c;
 
     uint8_t target_id = 0;
-    target_id = find_target_id();
+    target_id = MCF8315_find_target_id();
     if (target_id == 0xFF) {
         return MOTOR_CTRL_ERR_ERROR;
     }
@@ -354,7 +354,7 @@ MOTOR_ERRORS_e MCF8315_clear_fault(void) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-uint8_t find_target_id() {
+uint8_t MCF8315_find_target_id() {
 
     for (uint8_t i = 0; i < 127; i++) {
         
