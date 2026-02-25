@@ -190,8 +190,10 @@ MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
         return MOTOR_CTRL_ERR_ERROR;
     }
 
+    set_speed_mode(MCF_SPEED_MODE_I2C);
+
 #ifdef MPET_ROUTINE
-    run_mpet();
+    MCF8315_mpet();
 #else
     MCF8315_read_eeprom();
 #endif
@@ -234,7 +236,7 @@ MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e extract_motor_params(motor_parameters_s *extracted_params) {
+MOTOR_ERRORS_e MCF8315_extract_motor_params(motor_parameters_s *extracted_params) {
 
     union {
         uint64_t data_64;
@@ -269,30 +271,20 @@ MOTOR_ERRORS_e extract_motor_params(motor_parameters_s *extracted_params) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e run_mpet(void) {
+MOTOR_ERRORS_e MCF8315_mpet(void) {
 
     uint64_t reg_value;
-
-    // Set Max Speed (should be done in a different setup)
-    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFFFFC000) | 0xFFF; //(MAX_SPEED_HZ * 6); // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
-    MCF8315_write_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, reg_value, D_LEN_32_BIT);
-
-    // Enable MPET and writing the results to the shadow ram
-    MCF8315_read_register(MCF8315_EEPROM_ISD_CONFIG_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFFFFFE3F);
-    MCF8315_write_register(MCF8315_EEPROM_ISD_CONFIG_REG, reg_value, D_LEN_32_BIT);
     
+    // Best to have speed at zero so the motor returns to a standstill at the end of the MPET
     MCF8315_set_speed(0);
-    set_speed_mode(MCF_SPEED_MODE_I2C);
 
-    // Setting various parameters, will need to move this to its own function
+    // Clear faults
+    MCF8315_clear_fault();
 
+    // Start motor parameter extract
+    MCF8315_write_register(MCF8315_ALGO_DEBUG2_REG, 0x0000003F, D_LEN_32_BIT);
 
-
-    handle_fault();
-    MCF8315_write_register(MCF8315_ALGO_DEBUG2_REG, 0x0000003F, D_LEN_32_BIT); // Start motor parameter extraction
-
+    // Wait until MPET completes, or timeout
     uint32_t timeout_timer = HAL_GetTick();
     do {
         MCF8315_read_register(MCF8315_ALGO_STATUS_MPET_REG, &reg_value, D_LEN_32_BIT);
@@ -300,6 +292,23 @@ MOTOR_ERRORS_e run_mpet(void) {
             return MOTOR_CTRL_ERR_ERROR;
         }
     } while((reg_value & 0xF0000000) != 0xF0000000);
+
+    return MOTOR_CTRL_ERR_OK;
+}
+
+MOTOR_ERRORS_e MCF8315_set_max_speed(uint32_t max_speed_rpm) {
+
+    // Math based on datasheet
+    uint16_t speed = (max_speed_rpm * POLE_PAIRS) / 10;
+
+    // Check if max speed is too high for the maximum register value
+    if (speed > 0x3FFF) {
+        return MOTOR_CTRL_ERR_ERROR;
+    }
+
+    uint64_t reg_value;
+    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
+    reg_value = (reg_value & 0xFFFFC000) | speed;
 
     return MOTOR_CTRL_ERR_OK;
 }
