@@ -5,21 +5,10 @@
 #include <math.h>
 #include "../inc/MCF8315D_reg_defs.h"
 
-// MOTOR_STARTUP_2 registers
-#define IPD_CURR_THR 0x3 //.625 A
-#define IPD_REPEAT 0x1 // Two times
-#define MTR_STARTUP 0x1 // Double Align
-#define ALIGN_TIME 0x2 // 100 ms
+#define EEPROM_TIMEOUT 1000
 
 #define MPET_ROUTINE
 #define MPET_TIMEOUT_ms 1000000
-
-// MOTOR_STARTUP_2 registers
-#define OL_ILIMIT 0x4 //.937 A
-#define OL_ACC_A1 0x9 //100 Hz/s
-#define OL_ACC_A2 0x8 // 75 Hz/s2
-#define OPN_CL_HANDOFF_THR 0x9 // 10 %
-#define AUTO_HANDOFF 0x1
 
 #define POLE_PAIRS 4
 #define MAX_SPEED_HZ 0x1000
@@ -27,20 +16,30 @@
 
 /* Private Variables */
 static eeprom_register_s eeprom_default_config[] = {
-    {MCF8315_EEPROM_ISD_CONFIG_REG,        0x7C700484},
-    {MCF8315_EEPROM_REV_DRIVE_CONFIG_REG,  0x00000000},
-    {MCF8315_EEPROM_MOTOR_STARTUP_1_REG,   0x40000096},
-    {MCF8315_EEPROM_MOTOR_STARTUP_2_REG,   0x00000000},
-    {MCF8315_EEPROM_CLOSED_LOOP1_REG,      0x00000000},
-    {MCF8315_EEPROM_CLOSED_LOOP2_REG,      0x00000000},
+    {MCF8315_EEPROM_ISD_CONFIG_REG,        0x64F34CA0},
+    {MCF8315_EEPROM_REV_DRIVE_CONFIG_REG,  0xA8200000},
+    {MCF8315_EEPROM_MOTOR_STARTUP_1_REG,   0x8B080790},
+    {MCF8315_EEPROM_MOTOR_STARTUP_2_REG,   0x23026014},
+    {MCF8315_EEPROM_CLOSED_LOOP1_REG,      0x903981B8},
+    {MCF8315_EEPROM_CLOSED_LOOP2_REG,      0x0BADCA70},
     {MCF8315_EEPROM_CLOSED_LOOP3_REG,      0x00000000},
-    {MCF8315_EEPROM_CLOSED_LOOP4_REG,      0x00000000},
+    {MCF8315_EEPROM_CLOSED_LOOP4_REG,      0x00100002},
     {MCF8315_EEPROM_REF_PROFILES1_REG,     0x00000000},
     {MCF8315_EEPROM_REF_PROFILES2_REG,     0x00000000},
-    {MCF8315_EEPROM_REF_PROFILES3_REG,     0x00000000},
-    {MCF8315_EEPROM_REF_PROFILES4_REG,     0x00000000},
-    {MCF8315_EEPROM_REF_PROFILES5_REG,     0x00000000},
-    {MCF8315_EEPROM_REF_PROFILES6_REG,     0x00000000}
+    {MCF8315_EEPROM_REF_PROFILES3_REG,     0x80000002},
+    {MCF8315_EEPROM_REF_PROFILES4_REG,     0x80068000},
+    {MCF8315_EEPROM_REF_PROFILES5_REG,     0x80000010},
+    {MCF8315_EEPROM_REF_PROFILES6_REG,     0x800001A3},
+    {MCF8315_EEPROM_FAULT_CONFIG1_REG,     0x000004B0},
+    {MCF8315_EEPROM_FAULT_CONFIG2_REG,     0xBED9909E},
+    {MCF8315_EEPROM_PIN_CONFIG_REG,        0x08200309},
+    {MCF8315_EEPROM_DEVICE_CONFIG1_REG,    0x83E8E000},
+    {MCF8315_EEPROM_DEVICE_CONFIG2_REG,    0xF55349F8},
+    {MCF8315_EEPROM_PERI_CONFIG1_REG,      0x83085C00},
+    {MCF8315_EEPROM_GD_CONFIG1_REG,        0x9C461900},
+    {MCF8315_EEPROM_GD_CONFIG2_REG,        0x00840000},
+    {MCF8315_EEPROM_INT_ALGO_1_REG,        0x00000000},
+    {MCF8315_EEPROM_INT_ALGO_2_REG,        0x89750005},
 };
 
 static I2C_HandleTypeDef *hi2c_motor_ctrl;
@@ -160,29 +159,7 @@ static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word) {
 
 static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data) {
 
-    // Set speed ref to 0, skeptical that this is the right value but it is what is written in the datasheet
-    uint64_t reg_data;
-    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x08000000, D_LEN_32_BIT);
-    MCF8315_read_register(MCF8315_ALGO_DEBUG1_REG, &reg_data, D_LEN_32_BIT);
-
-    clear_fault();
-
-    // Read EEPROM into its corresponding shadow registers
-    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x40000000, D_LEN_32_BIT);
-
-    HAL_Delay(200); //Wait for EEPROM read to complete
-
-    // This checks to ensure that the EEPROM was read successfully
-    union {
-        uint64_t data_64;
-        uint32_t data_32;
-    } read_check_union;
-
-    MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &read_check_union.data_64, D_LEN_32_BIT);
-
-    if (read_check_union.data_32 != 0x00000000) {
-        return MOTOR_CTRL_ERR_ERROR;
-    }
+    MCF8315_read_eeprom();
 
     for(uint8_t i = MCF8315_EEPROM_ISD_CONFIG_REG; i<= MCF8315_EEPROM_GD_CONFIG2_REG; i+=2) {
 
@@ -218,52 +195,11 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
 
 #ifdef MPET_ROUTINE
     run_mpet();
-    uint64_t fault_status;
-    uint64_t reg_value;
-
-    uint64_t mtr_params;
-    uint64_t cl3;
-    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFFFFFFC7) | (0x6 << 3);
-    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, reg_value, D_LEN_32_BIT);
-
-    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG2_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFE3FFFFF) | (0x7 << 22);
-    reg_value &= (1 << 29);
-    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG2_REG, reg_value, D_LEN_32_BIT);
-
-    MCF8315_read_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0x07FFFFFF) | (0x5 << 27); // Set CL ILIMIT to 1.25 A
-    MCF8315_write_register(MCF8315_EEPROM_FAULT_CONFIG1_REG, reg_value, D_LEN_32_BIT);
-
-    MCF8315_read_register(MCF8315_EEPROM_PERI_CONFIG1_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xF3FFFFFF) | (0x1 << 26);
-    MCF8315_write_register(MCF8315_EEPROM_PERI_CONFIG1_REG, reg_value, D_LEN_32_BIT);
-
-    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP3_REG, &cl3, D_LEN_32_BIT);
-    MCF8315_read_register(MCF8315_MTR_PARAMS_REG, &mtr_params, D_LEN_32_BIT);
-
-    MCF8315_read_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, &reg_value, D_LEN_32_BIT);
-    reg_value = (reg_value & 0xFFFFC000) | (MAX_SPEED_HZ * 6); // Max speed is 2730 Hz (Unsure RPS until pole pair number is determined)
-    MCF8315_write_register(MCF8315_EEPROM_CLOSED_LOOP4_REG, reg_value, D_LEN_32_BIT);
-
-    reg_value = (OL_ILIMIT << 27) | (OL_ACC_A1 << 23) | (OL_ACC_A2 << 19) | (AUTO_HANDOFF << 18) | (OPN_CL_HANDOFF_THR << 13);
-    MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_2_REG, (uint64_t) reg_value, D_LEN_32_BIT);
-
-    reg_value = (MTR_STARTUP << 29) | (ALIGN_TIME << 21) | (IPD_CURR_THR << 9) | (IPD_REPEAT << 4);
-    MCF8315_write_register(MCF8315_EEPROM_MOTOR_STARTUP_1_REG, (uint64_t) reg_value, D_LEN_32_BIT);
-
-    motor_set_speed(10);
-    do {
-        MCF8315_read_register(MCF8315_CONTROLLER_FAULT_STATUS_REG, &fault_status, D_LEN_32_BIT);
-    } while (fault_status == 0);
-
 #else
 // Load parameters from EEPROM
 #endif
 
-    
-    read_eeprom_config(eeprom_data);
+
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -387,7 +323,7 @@ MOTOR_ERRORS_e handle_fault(void) {
 
     // Implement fault handling logic
 
-    clear_fault();
+    MCF8315_clear_fault();
 }
 
 MOTOR_ERRORS_e get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault) {
@@ -407,7 +343,7 @@ MOTOR_ERRORS_e get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault
 
 }
 
-MOTOR_ERRORS_e clear_fault(void) {
+MOTOR_ERRORS_e MCF8315_clear_fault(void) {
 
     union {
         uint64_t data_64;
@@ -473,5 +409,28 @@ MOTOR_ERRORS_e set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
     MCF8315_read_register(MCF8315_EEPROM_PIN_CONFIG_REG, &reg_value, D_LEN_32_BIT);
     reg_value = (reg_value & 0xFFFFFFFC) | speed_mode;
     MCF8315_write_register(MCF8315_EEPROM_PIN_CONFIG_REG, reg_value, D_LEN_32_BIT);
+
+}
+
+MOTOR_ERRORS_e MCF8315_read_eeprom(void) {
+    
+    // Place device in idle/standby state
+    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x08000000, D_LEN_32_BIT);
+
+    MCF8315_clear_fault();
+
+    // Read EEPROM into its corresponding shadow registers
+    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x40000000, D_LEN_32_BIT);
+
+    uint32_t time = HAL_GetTick();
+    uint64_t data;
+
+    do {
+        MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &data, D_LEN_32_BIT);
+        if (time - HAL_GetTick() > EEPROM_TIMEOUT) {
+            return MOTOR_CTRL_ERR_ERROR;
+        }
+    } while ((uint32_t) data != 0x00000000);
+
 
 }
