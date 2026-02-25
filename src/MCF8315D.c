@@ -190,7 +190,7 @@ MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
         return MOTOR_CTRL_ERR_ERROR;
     }
 
-    set_speed_mode(MCF_SPEED_MODE_I2C);
+    MCF8315_set_speed_mode(MCF_SPEED_MODE_I2C);
 
 #ifdef MPET_ROUTINE
     MCF8315_mpet();
@@ -400,7 +400,7 @@ void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 
 }
 
-MOTOR_ERRORS_e set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
+MOTOR_ERRORS_e MCF8315_set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
     
     uint64_t reg_value;
 
