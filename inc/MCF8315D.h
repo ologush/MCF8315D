@@ -99,7 +99,7 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c);
 MOTOR_ERRORS_e motor_parameter_extraction(motor_parameters_s *motor_params);
 MOTOR_ERRORS_e write_config_to_eeprom();
 MOTOR_ERRORS_e MCF8315_read_eeprom(void);
-MOTOR_ERRORS_e motor_set_speed(float speed_rpm);
+MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm);
 MOTOR_ERRORS_e motor_get_speed(float *speed_rpm);
 MOTOR_ERRORS_e handle_fault(void);
 MOTOR_ERRORS_e get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault);

@@ -204,29 +204,22 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e motor_set_speed(float speed_rpm) {
+MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm) {
 
     if(speed_rpm > MAX_SPEED_RPM) {
         return MOTOR_CTRL_ERR_ERROR;
     }
 
-    uint32_t speed_mask = 0x8000FFFF; // Mask to clear speed bits
-    uint32_t current_register_value;
     uint16_t speed = (uint16_t)roundf((speed_rpm / MAX_SPEED_RPM) * 32768.0f);
     
-    union {
-        uint64_t data_64;
-        uint32_t data_32;
-    } current_speed_union;
+    uint64_t current_speed;
 
-    MCF8315_read_register(MCF8315_ALGO_DEBUG1_REG, &current_speed_union.data_64, D_LEN_32_BIT);
+    MCF8315_read_register(MCF8315_ALGO_DEBUG1_REG, &current_speed, D_LEN_32_BIT);
 
-    current_speed_union.data_32 &= speed_mask;
-    current_speed_union.data_32 |= ((uint32_t)speed << 16);
+    current_speed &= 0x8000FFFF;
+    current_speed |= ((uint32_t)speed << 16);
 
-    uint32_t set_speed = ((uint32_t)speed << 16);
-
-    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, current_speed_union.data_64, D_LEN_32_BIT);
+    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, current_speed, D_LEN_32_BIT);
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -294,7 +287,7 @@ MOTOR_ERRORS_e run_mpet(void) {
     reg_value = (reg_value & 0xFFFFFE3F);
     MCF8315_write_register(MCF8315_EEPROM_ISD_CONFIG_REG, reg_value, D_LEN_32_BIT);
     
-    motor_set_speed(0);
+    MCF8315_set_speed(0);
     set_speed_mode(MCF_SPEED_MODE_I2C);
 
     // Setting various parameters, will need to move this to its own function
