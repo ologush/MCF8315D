@@ -1,6 +1,8 @@
 // Includes
-#include "stm32l0xx_hal.h"
-#include "stm32l0xx_hal_i2c.h"
+// Replace depending on HAL version being used
+#include "stm32f3xx_hal.h"
+#include "stm32f3xx_hal_i2c.h"
+
 #include "../inc/MCF8315D.h"
 #include <math.h>
 #include "../inc/MCF8315D_reg_defs.h"
