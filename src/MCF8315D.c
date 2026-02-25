@@ -180,7 +180,7 @@ static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data) {
 
 /* Global function definitions */
 
-MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
+MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
 {
     hi2c_motor_ctrl = hi2c;
 
@@ -190,16 +190,11 @@ MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c)
         return MOTOR_CTRL_ERR_ERROR;
     }
 
-    uint32_t eeprom_data[24] = {0};
-    read_eeprom_config(eeprom_data);
-
 #ifdef MPET_ROUTINE
     run_mpet();
 #else
-// Load parameters from EEPROM
+    MCF8315_read_eeprom();
 #endif
-
-
 
     return MOTOR_CTRL_ERR_OK;
 }

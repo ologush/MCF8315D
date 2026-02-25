@@ -95,7 +95,7 @@ typedef struct {
 } eeprom_register_s;
 
 /* Public function prototypes */
-MOTOR_ERRORS_e motor_ctrl_init(I2C_HandleTypeDef *hi2c);
+MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c);
 MOTOR_ERRORS_e motor_parameter_extraction(motor_parameters_s *motor_params);
 MOTOR_ERRORS_e write_config_to_eeprom();
 MOTOR_ERRORS_e MCF8315_read_eeprom(void);
