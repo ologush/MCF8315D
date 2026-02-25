@@ -46,9 +46,6 @@ static I2C_HandleTypeDef *hi2c_motor_ctrl;
 static MCF8315_STATE_e state;
 
 // Private function prototypes
-static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word);
-static MOTOR_ERRORS_e initial_eeprom_config(void);
-
 static MOTOR_ERRORS_e MCF8315_write_register(uint16_t reg_address, uint64_t reg_value, uint8_t length);
 static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_value, uint8_t length);
 

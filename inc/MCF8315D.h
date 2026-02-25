@@ -96,7 +96,6 @@ typedef struct {
 
 /* Public function prototypes */
 MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c);
-MOTOR_ERRORS_e write_config_to_eeprom();
 MOTOR_ERRORS_e MCF8315_read_eeprom(void);
 MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm);
 MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm);
