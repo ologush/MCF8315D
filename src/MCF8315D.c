@@ -304,18 +304,18 @@ MOTOR_ERRORS_e MCF8315_set_max_speed(uint32_t max_speed_rpm) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e handle_fault(void) {
+MOTOR_ERRORS_e MCF8315_handle_fault(void) {
 
     uint32_t gate_driver_fault = 0;
     uint32_t controller_fault = 0;
-    get_fault(&gate_driver_fault, &controller_fault);
+    MCF8315_get_fault(&gate_driver_fault, &controller_fault);
 
     // Implement fault handling logic
 
     MCF8315_clear_fault();
 }
 
-MOTOR_ERRORS_e get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault) {
+MOTOR_ERRORS_e MCF8315_get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault) {
 
     union {
         uint64_t data_64;
