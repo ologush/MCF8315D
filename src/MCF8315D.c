@@ -48,7 +48,6 @@ static MCF8315_STATE_e state;
 // Private function prototypes
 static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word);
 static MOTOR_ERRORS_e initial_eeprom_config(void);
-static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data);
 
 static MOTOR_ERRORS_e MCF8315_write_register(uint16_t reg_address, uint64_t reg_value, uint8_t length);
 static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_value, uint8_t length);
@@ -149,15 +148,7 @@ static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_
     return MOTOR_CTRL_ERR_OK;
 }
 
-static MOTOR_ERRORS_e calculate_crc(motor_data_word_s *data_word) {
-
-    /* Todo: Implement Algorithm */
-    return MOTOR_CTRL_ERR_OK;
-}
-
-
-
-static MOTOR_ERRORS_e read_eeprom_config(uint32_t *config_data) {
+MOTOR_ERRORS_e MCF8315_get_eeprom(uint32_t *config_data) {
 
     MCF8315_read_eeprom();
 
