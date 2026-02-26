@@ -6,6 +6,7 @@
 #include "../inc/MCF8315D.h"
 #include <math.h>
 #include "../inc/MCF8315D_reg_defs.h"
+#include <stdlib.h>
 
 #define EEPROM_TIMEOUT 1000
 
@@ -15,6 +16,8 @@
 #define POLE_PAIRS 4
 #define MAX_SPEED_HZ 0x1000
 #define MAX_SPEED_RPM 250 // TODO: Change
+
+#define SPEED_STEP 100
 
 /* Private Variables */
 static eeprom_register_s eeprom_default_config[] = {
@@ -191,7 +194,7 @@ MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm) {
+MOTOR_ERRORS_e MCF8315_set_speed(uint32_t speed_rpm) {
 
     if(speed_rpm > MAX_SPEED_RPM) {
         return MOTOR_CTRL_ERR_ERROR;
@@ -211,7 +214,7 @@ MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm) {
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm) {
+MOTOR_ERRORS_e MCF8315_get_speed(int32_t *speed_rpm) {
 
     union {
         uint64_t data_64;
@@ -220,8 +223,9 @@ MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm) {
 
     MCF8315_read_register(MCF8315_SPEED_FDBK_REG, &speed_union.data_64, D_LEN_32_BIT);
 
-    *speed_rpm = (float)(((float) speed_union.data_32 / pow(2, 27)) * MAX_SPEED_HZ);
-    *speed_rpm = *speed_rpm * 60 / POLE_PAIRS;
+    
+    float speed_hz = (float)(((float) speed_union.data_32 / pow(2, 27)) * MAX_SPEED_HZ);
+    *speed_rpm = speed_hz * 60 / POLE_PAIRS;
 
     return MOTOR_CTRL_ERR_OK;
 }
@@ -420,5 +424,30 @@ MOTOR_ERRORS_e MCF8315_read_eeprom(void) {
         }
     } while ((uint32_t) data != 0x00000000);
 
+
+}
+
+MOTOR_ERRORS_e MCF8315_ramp_speed(int32_t speed_rpm) {
+
+    int32_t current_speed;
+
+    MCF8315_get_speed(&current_speed);
+
+    int32_t step;
+
+    if (current_speed < speed_rpm) {
+        step = -1 * SPEED_STEP;
+    } else {
+        step = SPEED_STEP;
+    }
+
+    // This is a temporary solution, will implement with timer interrupts
+    do {
+        current_speed += step;
+        MCF8315_set_speed(current_speed);
+        HAL_Delay(10);
+    } while (abs(current_speed) < abs(speed_rpm));
+
+    return MOTOR_CTRL_ERR_OK;
 
 }

@@ -97,8 +97,8 @@ typedef struct {
 /* Public function prototypes */
 MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c);
 MOTOR_ERRORS_e MCF8315_read_eeprom(void);
-MOTOR_ERRORS_e MCF8315_set_speed(float speed_rpm);
-MOTOR_ERRORS_e MCF8315_get_speed(float *speed_rpm);
+MOTOR_ERRORS_e MCF8315_set_speed(uint32_t speed_rpm);
+MOTOR_ERRORS_e MCF8315_get_speed(int32_t *speed_rpm);
 MOTOR_ERRORS_e MCF8315_handle_fault(void);
 MOTOR_ERRORS_e MCF8315_get_fault(uint32_t *gate_driver_fault, uint32_t *controller_fault);
 MOTOR_ERRORS_e MCF8315_clear_fault(void);
@@ -108,5 +108,6 @@ MOTOR_ERRORS_e MCF8315_set_speed_mode(MCF8315_SPEED_MODE_e speed_mode);
 MOTOR_ERRORS_e MCF8315_set_max_speed(uint32_t max_speed_rpm);
 MOTOR_ERRORS_e MCF8315_get_eeprom(uint32_t *config_data);
 MOTOR_ERRORS_e MCF8315_find_target_id(void);
+MOTOR_ERRORS_e MCF8315_ramp_speed(int32_t ramp_speed);
 
 #endif
