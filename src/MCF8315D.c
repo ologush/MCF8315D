@@ -53,7 +53,7 @@ static MCF8315_STATE_e state;
 // Private function prototypes
 static MOTOR_ERRORS_e MCF8315_write_register(uint16_t reg_address, uint64_t reg_value, uint8_t length);
 static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_value, uint8_t length);
-
+static MOTOR_ERRORS_e MCF8315_read_eeprom(void);
 static MOTOR_ERRORS_e MCF8315_write_register(uint16_t reg_address, uint64_t reg_value, uint8_t length) {
 
     uint8_t tx_buffer_len = 4;
@@ -156,7 +156,61 @@ static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_
     return MOTOR_CTRL_ERR_OK;
 }
 
-MOTOR_ERRORS_e MCF8315_get_eeprom(uint32_t *config_data) {
+static MOTOR_ERRORS_e MCF8315_write_to_shadow_regs(eeprom_register_s *eeprom_values, uint8_t num_regs) {
+
+    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x80000000, D_LEN_32_BIT);
+    MCF8315_clear_fault();
+
+    for (uint8_t i; i < num_regs; i++) {
+        MCF8315_write_register(eeprom_values[i].reg_address, eeprom_values[i].reg_value, D_LEN_32_BIT);
+    }
+
+    return MOTOR_CTRL_ERR_OK;
+
+}
+
+static MOTOR_ERRORS_e MCF8315_shadow_regs_to_eeprom(void) {
+
+    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x8A500000, D_LEN_32_BIT);
+
+    HAL_Delay(750);
+
+    uint64_t reg_data;
+
+    MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &reg_data, D_LEN_32_BIT);
+
+    if(reg_data == 0x00000000) {
+        return MOTOR_CTRL_ERR_OK;
+    }
+
+    return MOTOR_CTRL_ERR_ERROR;
+}
+
+
+static MOTOR_ERRORS_e MCF8315_read_eeprom(void) {
+    
+    // Place device in idle/standby state
+    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x08000000, D_LEN_32_BIT);
+
+    MCF8315_clear_fault();
+
+    // Read EEPROM into its corresponding shadow registers
+    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x40000000, D_LEN_32_BIT);
+
+    uint32_t time = HAL_GetTick();
+    uint64_t data;
+
+    do {
+        MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &data, D_LEN_32_BIT);
+        if (time - HAL_GetTick() > EEPROM_TIMEOUT) {
+            return MOTOR_CTRL_ERR_ERROR;
+        }
+    } while ((uint32_t) data != 0x00000000);
+
+}
+
+
+MOTOR_ERRORS_e MCF8315_get_eeprom(eeprom_register_s *config_data) {
 
     MCF8315_read_eeprom();
 
@@ -170,8 +224,8 @@ MOTOR_ERRORS_e MCF8315_get_eeprom(uint32_t *config_data) {
         MCF8315_read_register(i, &eeprom_value_union.data_64, D_LEN_32_BIT);
 
         uint8_t index = (i - MCF8315_EEPROM_ISD_CONFIG_REG) / 2;
-
-        config_data[index] = eeprom_value_union.data_32;
+        config_data[index].reg_address = i;
+        config_data[index].reg_value = eeprom_value_union.data_32;
     }
 
     return MOTOR_CTRL_ERR_OK;
@@ -427,29 +481,6 @@ MOTOR_ERRORS_e MCF8315_set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
     MCF8315_read_register(MCF8315_EEPROM_PIN_CONFIG_REG, &reg_value, D_LEN_32_BIT);
     reg_value = (reg_value & 0xFFFFFFFC) | speed_mode;
     MCF8315_write_register(MCF8315_EEPROM_PIN_CONFIG_REG, reg_value, D_LEN_32_BIT);
-
-}
-
-MOTOR_ERRORS_e MCF8315_read_eeprom(void) {
-    
-    // Place device in idle/standby state
-    MCF8315_write_register(MCF8315_ALGO_DEBUG1_REG, 0x08000000, D_LEN_32_BIT);
-
-    MCF8315_clear_fault();
-
-    // Read EEPROM into its corresponding shadow registers
-    MCF8315_write_register(MCF8315_ALGO_CTRL1_REG, 0x40000000, D_LEN_32_BIT);
-
-    uint32_t time = HAL_GetTick();
-    uint64_t data;
-
-    do {
-        MCF8315_read_register(MCF8315_ALGO_CTRL1_REG, &data, D_LEN_32_BIT);
-        if (time - HAL_GetTick() > EEPROM_TIMEOUT) {
-            return MOTOR_CTRL_ERR_ERROR;
-        }
-    } while ((uint32_t) data != 0x00000000);
-
 
 }
 
