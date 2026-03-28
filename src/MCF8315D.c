@@ -11,7 +11,7 @@
 #define EEPROM_TIMEOUT 1000
 
 #define MPET_ROUTINE
-#define MPET_TIMEOUT_ms 1000000
+#define MPET_TIMEOUT_ms 60000
 
 #define POLE_PAIRS 4
 #define MAX_SPEED_HZ 0x1000
@@ -140,9 +140,15 @@ static MOTOR_ERRORS_e MCF8315_read_register(uint16_t reg_address, uint64_t *reg_
     state = MCF_TX_R;
     e = HAL_I2C_Master_Seq_Transmit_IT(hi2c_motor_ctrl, tx_buffer[0], tx_buffer + 1, 3, I2C_FIRST_FRAME);
     while (state == MCF_TX_R);
+    if (state == MCF_ERROR) {
+        return MOTOR_CTRL_ERR_ERROR;
+    }
     state = MCF_RX;
     e = HAL_I2C_Master_Seq_Receive_IT(hi2c_motor_ctrl, tx_buffer[0], rx_union.buffer, real_length, I2C_LAST_FRAME);
-    while (state != MCF_DONE);
+    while (state != MCF_DONE && state != MCF_ERROR);
+    if (state == MCF_ERROR) {
+        return MOTOR_CTRL_ERR_ERROR;
+    }
     state = MCF_IDLE;
     
     *reg_value = rx_union.data_value;
@@ -185,13 +191,19 @@ MOTOR_ERRORS_e MCF8315_init(I2C_HandleTypeDef *hi2c)
 
     MCF8315_set_speed_mode(MCF_SPEED_MODE_I2C);
 
+    MOTOR_ERRORS_e mpet_status;
+
 #ifdef MPET_ROUTINE
-    MCF8315_mpet();
+    mpet_status = MCF8315_mpet();
 #else
     MCF8315_read_eeprom();
 #endif
-
-    return MOTOR_CTRL_ERR_OK;
+    if (mpet_status == MOTOR_CTRL_ERR_OK) {
+        return MOTOR_CTRL_ERR_OK;
+    } else {
+        return MOTOR_CTRL_ERR_ERROR;
+    }
+    
 }
 
 MOTOR_ERRORS_e MCF8315_set_speed(uint32_t speed_rpm) {
@@ -281,8 +293,17 @@ MOTOR_ERRORS_e MCF8315_mpet(void) {
     // Wait until MPET completes, or timeout
     uint32_t timeout_timer = HAL_GetTick();
     do {
+
         MCF8315_read_register(MCF8315_ALGO_STATUS_MPET_REG, &reg_value, D_LEN_32_BIT);
+        uint64_t mpet_status;
+        MCF8315_read_register(MCF8315_ALGO_STATUS_REG, &mpet_status, D_LEN_32_BIT);
+        MCF8315_read_register(MCF8315_ALGO_STATUS_MPET_REG, &reg_value, D_LEN_32_BIT);
+
         if(HAL_GetTick() - timeout_timer > MPET_TIMEOUT_ms) {
+            uint64_t gate_driver_fault;
+            uint64_t controller_fault;
+            MCF8315_read_register(MCF8315_GATE_DRIVER_FAULT_STATUS_REG, &gate_driver_fault, D_LEN_32_BIT);
+            MCF8315_read_register(MCF8315_CONTROLLER_FAULT_STATUS_REG, &controller_fault, D_LEN_32_BIT);
             return MOTOR_CTRL_ERR_ERROR;
         }
     } while((reg_value & 0xF0000000) != 0xF0000000);
@@ -392,6 +413,11 @@ void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
             break;
     }
 
+}
+
+void HAL_I2C_MasterErrorCallback(I2C_HandleTypeDef *hi2c) {
+  if (hi2c != hi2c_motor_ctrl) return;
+  state = MCF_ERROR;
 }
 
 MOTOR_ERRORS_e MCF8315_set_speed_mode(MCF8315_SPEED_MODE_e speed_mode) {
